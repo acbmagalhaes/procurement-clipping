@@ -1,6 +1,7 @@
 """
-Coleta diária de notícias via RSS + Claude Haiku para relevância.
-Roda às 11h UTC via GitHub Actions (collect.yml).
+Coleta diária de RSS + Telegram manual.
+Cron diário → RSS tech/financial/marketing → Claude Haiku filtra → Sheets.
+Bot Telegram: recebe link → Claude avalia → Sheets com origem='manual'.
 """
 
 import asyncio
@@ -8,24 +9,24 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import aiohttp
 import feedparser
 
-from src.common.claude import score_noticias
-from src.common.config import settings
-from src.common.sheets import append_noticias
+from src.common.claude import evaluate_relevance
+from src.common.sheets import append_news
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 RSS_FEEDS: dict[str, list[str]] = {
     "tech": [
-        "https://news.google.com/rss/search?q=Salesforce+OR+SAP+OR+Microsoft+OR+Oracle+OR+AWS+OR+ServiceNow+OR+Workday+OR+OpenAI+OR+IBM+OR+Atlassian+OR+Jira+OR+Slack+OR+Figma+OR+Crowdstrike&hl=pt-BR&gl=BR&ceid=BR:pt&tbs=qdr:d",
+        "https://news.google.com/rss/search?q=Salesforce+OR+SAP+OR+Microsoft+OR+Oracle+OR+AWS+OR+ServiceNow+OR+Workday+OR+OpenAI+OR+IBM+OR+Atlassian+OR+Jira+OR+Monday.com+OR+Notion+OR+Slack+OR+Figma+OR+Crowdstrike+OR+Zscaler&hl=pt-BR&gl=BR&ceid=BR:pt&tbs=qdr:d",
         "https://tecnoblog.net/feed/",
         "https://mittechreview.com.br/feed/",
         "https://www.infomoney.com.br/feed/",
     ],
     "financial": [
-        "https://news.google.com/rss/search?q=Mastercard+OR+Visa+OR+Cielo+OR+Stone+OR+Elo+OR+Getnet+OR+PagSeguro+OR+Nubank+OR+Pix+OR+fintech+OR+Fiserv+OR+B3+OR+Serasa&hl=pt-BR&gl=BR&ceid=BR:pt&tbs=qdr:d",
+        "https://news.google.com/rss/search?q=Mastercard+OR+Visa+OR+Cielo+OR+Stone+OR+Elo+OR+Getnet+OR+PagSeguro+OR+Nubank+OR+Pix+OR+fintech+OR+Fiserv+OR+Tecban+OR+B3+OR+Serasa&hl=pt-BR&gl=BR&ceid=BR:pt&tbs=qdr:d",
         "https://finsiders.com.br/feed/",
         "https://www.cnbc.com/id/10000664/device/rss/rss.html",
     ],
@@ -36,67 +37,88 @@ RSS_FEEDS: dict[str, list[str]] = {
 }
 
 
-def _parse_feed(url: str, cutoff: datetime) -> list[dict[str, str]]:
+async def _fetch_feed(session: aiohttp.ClientSession, url: str) -> list[dict]:
+    """Fetch and parse RSS feed, returning entries from last 24h."""
     try:
-        feed = feedparser.parse(url)
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            text = await resp.text()
+        feed = await asyncio.to_thread(feedparser.parse, text)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=1)
         items = []
         for entry in feed.entries:
-            pub = entry.get("published_parsed") or entry.get("updated_parsed")
-            if pub:
-                dt = datetime(*pub[:6], tzinfo=timezone.utc)
-                if dt < cutoff:
+            published = entry.get("published_parsed") or entry.get("updated_parsed")
+            if published:
+                from time import mktime
+                dt = datetime.fromtimestamp(mktime(published), tz=timezone.utc)
+                if dt < cutoff and len(feed.entries) >= 5:
                     continue
-            title = (entry.get("title") or "").replace('"', "'")
-            link = entry.get("link") or ""
+            title = entry.get("title", "").replace('"', "'")[:200]
+            link = entry.get("link", "")
             if title and link:
                 items.append({"title": title, "link": link})
         return items[:20]
-    except Exception as exc:
-        logger.warning("Feed parse failed %s: %s", url[:60], exc)
+    except Exception:
+        logger.exception("Feed fetch falhou: %s", url[:80])
         return []
 
 
-async def collect_category(categoria: str, urls: list[str], cutoff: datetime) -> list[dict[str, Any]]:
-    items: list[dict[str, str]] = []
-    for url in urls:
-        items.extend(await asyncio.to_thread(_parse_feed, url, cutoff))
-    if not items:
+async def collect_category(session: aiohttp.ClientSession, categoria: str, urls: list[str]) -> list[dict]:
+    """Fetch all RSS feeds for a category and evaluate relevance."""
+    all_items: list[dict] = []
+    tasks = [_fetch_feed(session, url) for url in urls]
+    results = await asyncio.gather(*tasks)
+    for r in results:
+        all_items.extend(r)
+
+    if not all_items:
         return []
-    scored = await score_noticias(items, categoria)
+
+    logger.info("[%s] %d artigos para avaliar", categoria, len(all_items))
+    relevant = await evaluate_relevance(all_items, categoria)
+    logger.info("[%s] %d relevantes (score >= 6)", categoria, len(relevant))
+    return relevant
+
+
+async def run(dry_run: bool = False) -> None:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    return [
-        {
-            "data": today,
-            "titulo": s.get("title", s.get("titulo", ""))[:200],
-            "link": s.get("link", ""),
-            "categoria": categoria,
-            "score_ia": s.get("score", 0),
-            "motivo": s.get("motivo", ""),
-            "score_humano": "",
-            "status": "pendente",
-            "origem": "automatico",
-        }
-        for s in scored
-    ]
-
-
-async def run() -> None:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=1)
     all_rows: list[dict[str, Any]] = []
 
-    for categoria, urls in RSS_FEEDS.items():
-        rows = await collect_category(categoria, urls, cutoff)
-        all_rows.extend(rows)
-        logger.info("[%s] %d notícias relevantes", categoria, len(rows))
+    async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as session:
+        for categoria, urls in RSS_FEEDS.items():
+            relevant = await collect_category(session, categoria, urls)
+            for item in relevant:
+                all_rows.append({
+                    "data": today,
+                    "titulo": str(item.get("title", ""))[:200],
+                    "link": item.get("link", ""),
+                    "categoria": categoria,
+                    "score_ia": item.get("score", 0),
+                    "motivo": item.get("motivo", ""),
+                    "score_humano": "",
+                    "status": "pendente",
+                    "origem": "automatico",
+                })
 
     if not all_rows:
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        all_rows = [{"data": today, "titulo": "sem_noticias", "link": "", "categoria": "",
-                     "score_ia": 0, "motivo": "", "score_humano": "", "status": "ignorado", "origem": "automatico"}]
+        all_rows = [{
+            "data": today, "titulo": "sem_noticias", "link": "", "categoria": "",
+            "score_ia": 0, "motivo": "", "score_humano": "", "status": "ignorado", "origem": "automatico",
+        }]
 
-    await asyncio.to_thread(append_noticias, all_rows)
-    logger.info("Total saved: %d", len(all_rows))
+    if dry_run:
+        for r in all_rows:
+            print(f"[{r['categoria']}] {r['titulo'][:80]} — score={r['score_ia']}")
+        logger.info("dry_run: %d notícias encontradas", len(all_rows))
+        return
+
+    try:
+        append_news(all_rows)
+        logger.info("Salvas %d notícias no Sheets.", len(all_rows))
+    except Exception:
+        logger.exception("Sheets append falhou")
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    import sys
+    dry = "--dry-run" in sys.argv
+    asyncio.run(run(dry_run=dry))

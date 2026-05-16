@@ -21,13 +21,13 @@ jobs:
       - name: Instalar dependências
         run: pip install -e .
 
-      - name: Gerar e enviar post para aprovação
+      - name: Gerar e enviar post semanal para aprovação
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
-          LINKEDIN_PERSON_ID: ${{ secrets.LINKEDIN_PERSON_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.PC_ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.PC_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.PC_TELEGRAM_CHAT_ID }}
+          GOOGLE_SHEET_ID: ${{ secrets.PC_GOOGLE_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.PC_GOOGLE_SERVICE_ACCOUNT_JSON }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.PC_LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_AUTHOR_URN: ${{ secrets.PC_LINKEDIN_AUTHOR_URN }}
         run: python -m src.clipping.publish

@@ -9,8 +9,9 @@ class Settings(BaseSettings):
     telegram_chat_id: str
     google_sheet_id: str
     google_service_account_json: str
+    # LinkedIn (optional — required only for automatic posting)
     linkedin_access_token: str = ""
-    linkedin_person_id: str = ""
+    linkedin_author_urn: str = ""  # e.g. "urn:li:person:XXXXXXXX"
 
 
 settings = Settings()  # type: ignore[call-arg]

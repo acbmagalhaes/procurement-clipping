@@ -1,1 +1,1 @@
-web: python -m src.bot.clipping_bot
+web: python -m src.clipping.bot

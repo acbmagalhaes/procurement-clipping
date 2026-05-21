@@ -131,7 +131,10 @@ async def run() -> None:
     logger.info("Notícias: tech=%d, financial=%d, marketing=%d", len(tech), len(financial), len(marketing))
 
     selected = await select_top_news(tech, financial, marketing)
+    logger.info("selected keys: tech=%d, financial=%d, marketing=%d",
+                len(selected.get("tech", [])), len(selected.get("financial", [])), len(selected.get("marketing", [])))
     estrutura, destaque_just = _build_post_structure(selected)
+    logger.info("estrutura preview: %s", estrutura[:300])
 
     post_text = await generate_linkedin_post(estrutura, destaque_just)
     logger.info("Post gerado (%d chars)", len(post_text))

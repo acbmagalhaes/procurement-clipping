@@ -91,19 +91,34 @@ async def select_top_news(tech: list, financial: list, marketing: list) -> dict[
         messages=[{"role": "user", "content": prompt}],
     )
     raw = response.content[0].text
-    logger.info("select_top_news raw response: %s", raw[:500])
+    logger.info("select_top_news raw response: %s", raw[:800])
     clean = re.sub(r"```json|```", "", raw).strip()
-    match = re.search(r"\{.*\}", clean, re.DOTALL)
-    if not match:
-        logger.warning("select_top_news: no JSON found in response")
+
+    # Find the first { and match to its closing } by counting depth
+    start = clean.find("{")
+    if start == -1:
+        logger.warning("select_top_news: no JSON object found in response")
+        return {"tech": [], "financial": [], "marketing": []}
+    depth = 0
+    end = -1
+    for i, c in enumerate(clean[start:], start):
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    if end == -1:
+        logger.warning("select_top_news: unmatched braces in response")
         return {"tech": [], "financial": [], "marketing": []}
     try:
-        result = json.loads(match.group())
-        logger.info("select_top_news: tech=%d, financial=%d, marketing=%d",
+        result = json.loads(clean[start : end + 1])
+        logger.info("select_top_news parsed: tech=%d, financial=%d, marketing=%d",
                     len(result.get("tech", [])), len(result.get("financial", [])), len(result.get("marketing", [])))
         return result
     except json.JSONDecodeError:
-        logger.warning("select_top_news: JSON decode failed. Raw: %s", raw[:300])
+        logger.warning("select_top_news: JSON decode failed. Extracted: %s", clean[start : end + 1][:300])
         return {"tech": [], "financial": [], "marketing": []}
 
 

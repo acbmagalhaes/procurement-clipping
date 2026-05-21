@@ -91,13 +91,19 @@ async def select_top_news(tech: list, financial: list, marketing: list) -> dict[
         messages=[{"role": "user", "content": prompt}],
     )
     raw = response.content[0].text
+    logger.info("select_top_news raw response: %s", raw[:500])
     clean = re.sub(r"```json|```", "", raw).strip()
     match = re.search(r"\{.*\}", clean, re.DOTALL)
     if not match:
+        logger.warning("select_top_news: no JSON found in response")
         return {"tech": [], "financial": [], "marketing": []}
     try:
-        return json.loads(match.group())
+        result = json.loads(match.group())
+        logger.info("select_top_news: tech=%d, financial=%d, marketing=%d",
+                    len(result.get("tech", [])), len(result.get("financial", [])), len(result.get("marketing", [])))
+        return result
     except json.JSONDecodeError:
+        logger.warning("select_top_news: JSON decode failed. Raw: %s", raw[:300])
         return {"tech": [], "financial": [], "marketing": []}
 
 

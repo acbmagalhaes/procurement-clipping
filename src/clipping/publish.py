@@ -71,11 +71,11 @@ def _build_post_structure(selected: dict[str, list]) -> tuple[str, str]:
     # Destaque: first of tech, fallback financial, fallback marketing
     destaque_titulo = destaque_just = destaque_cat = ""
     if tech:
-        destaque_titulo, destaque_cat, destaque_just = tech[0]["titulo"], "tech", tech[0].get("motivo", "")
+        destaque_titulo, destaque_cat, destaque_just = tech[0]["titulo"], "tech", tech[0].get("justificativa", "") or tech[0].get("motivo", "")
     elif financial:
-        destaque_titulo, destaque_cat, destaque_just = financial[0]["titulo"], "financial", financial[0].get("motivo", "")
+        destaque_titulo, destaque_cat, destaque_just = financial[0]["titulo"], "financial", financial[0].get("justificativa", "") or financial[0].get("motivo", "")
     elif marketing:
-        destaque_titulo, destaque_cat, destaque_just = marketing[0]["titulo"], "marketing", marketing[0].get("motivo", "")
+        destaque_titulo, destaque_cat, destaque_just = marketing[0]["titulo"], "marketing", marketing[0].get("justificativa", "") or marketing[0].get("motivo", "")
 
     def section(cat_key: str, icon: str, title: str, items: list) -> str:
         if not items and destaque_cat != cat_key:

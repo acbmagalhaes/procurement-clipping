@@ -58,7 +58,7 @@ _SELECT_SYSTEM = """Você é Augusto Magalhaes, Head of Procurement.
 Selecione as 5 notícias MAIS RELEVANTES de cada categoria.
 Priorize score_final maior. Elimine notícias com conceito duplicado (mesmo assunto — mantenha a de maior score).
 Retorne APENAS JSON:
-{"tech":[{"titulo":"...","link":"...","justificativa":"..."}],"financial":[...],"marketing":[...]}"""
+{"tech":[{"titulo":"...","justificativa":"..."}],"financial":[...],"marketing":[...]}"""
 
 _POST_SYSTEM = """Você é Augusto Magalhaes, Head of Procurement & Logistics, 15 anos de experiência no Brasil.
 Preencha APENAS os 4 marcadores no post. NÃO altere nada mais.
@@ -78,15 +78,18 @@ PROIBIDO:
 
 async def select_top_news(tech: list, financial: list, marketing: list) -> dict[str, list]:
     """Claude Haiku selects top 5 per category."""
+    def _slim(items: list) -> list:
+        return [{"titulo": i["titulo"], "score_final": i.get("score_final", 0), "motivo": i.get("motivo", "")} for i in items]
+
     prompt = (
-        f"TECNOLOGIA ({len(tech)}):\n{json.dumps(tech[:8], ensure_ascii=False)}\n\n"
-        f"FINANCEIRO ({len(financial)}):\n{json.dumps(financial[:8], ensure_ascii=False)}\n\n"
-        f"MARKETING ({len(marketing)}):\n{json.dumps(marketing[:8], ensure_ascii=False)}"
+        f"TECNOLOGIA ({len(tech)}):\n{json.dumps(_slim(tech[:8]), ensure_ascii=False)}\n\n"
+        f"FINANCEIRO ({len(financial)}):\n{json.dumps(_slim(financial[:8]), ensure_ascii=False)}\n\n"
+        f"MARKETING ({len(marketing)}):\n{json.dumps(_slim(marketing[:8]), ensure_ascii=False)}"
     )
     response = await asyncio.to_thread(
         _client.messages.create,
         model="claude-haiku-4-5-20251001",
-        max_tokens=4096,
+        max_tokens=8192,
         system=_SELECT_SYSTEM,
         messages=[{"role": "user", "content": prompt}],
     )
